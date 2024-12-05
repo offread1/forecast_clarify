@@ -1,8 +1,7 @@
-from datetime import datetime
-
-import numpy as np
-import pandas as pd
 import xarray as xr
+from datetime import datetime
+import pandas as pd
+import numpy as np
 from scipy.optimize import leastsq
 from scipy.stats import pearsonr
 
@@ -116,7 +115,7 @@ class SeasonalCycle:
             self.phase = ds.phase
             self.offset = ds.offset
             self.nharm = len(ds.phase.hrmc)
-
+            
     def save(self, filename):
         """ """
 
@@ -127,8 +126,20 @@ class SeasonalCycle:
                 offset=self.offset.temperature,
             )
         ).to_netcdf(filename)
+        
+    def savesalinity(self, filename):
+        """ """
+
+        xr.Dataset(
+            data_vars=dict(
+                amplitude=self.amplitude.salinity,
+                phase=self.phase.salinity,
+                offset=self.offset.salinity,
+            )
+        ).to_netcdf(filename)
 
 
+        
 def seascyc_full(doy, timeseries, harmonics):
 
     os, a, ph = harm_fit(doy, timeseries, harmonics)
@@ -164,7 +175,6 @@ def harm_fit(doy, timeseries, harmonics):
         # function to minimize
         def opt_func(wv):
             return wv[0] * np.sin(x * (n + 1) + wv[1]) - ts_centered
-
         # opt_func = lambda wv: wv[0] * np.sin(x * (n + 1) + wv[1]) - ts_centered
 
         # minimize using least squares:
@@ -376,6 +386,19 @@ class Trend:
         dataset.polyv.attrs = self.attributes
 
         dataset.to_netcdf(filename)
+        
+    def savesalinity(self, filename):
+        """
+        save a trend file so it can be loaded without estimation from the original data
+        """
+
+        dataset = xr.Dataset(
+            data_vars=dict(polyv=self.polyv.salinity, offset=self.mean.salinity)
+        )
+
+        dataset.polyv.attrs = self.attributes
+
+        dataset.to_netcdf(filename)
 
 
 def lin_reg(prdctr, prdctnd, degree):
@@ -444,6 +467,12 @@ class Persistence:
         xr.Dataset(data_vars=dict(correlation=self.corr.temperature)).to_netcdf(
             filename
         )
+        
+    def savesalinity(self, filename):
+        """ """
+        xr.Dataset(data_vars=dict(correlation=self.corr.salinity)).to_netcdf(
+            filename
+        )
 
 
 class SeasonalPersistence:
@@ -456,13 +485,16 @@ class SeasonalPersistence:
         self.pers_wndw = wndw
         self.smooth_harm = harmonics
 
-    def fit(self, timeseries, show_progress=True):
+    def fit(self, timeseries, show_progress=True, salinity=False):
         # re-organize time series by doy and pad with doys at beginning and end
         self.timeseries = timeseries.assign_coords(
             month_day=get_doy_coord(timeseries, ign_leap=False)
         )
 
-        timeseries_by_doy = doy_pad(self.timeseries, self.pers_wndw)
+        if salinity:
+            timeseries_by_doy = doy_pad_salinity(self.timeseries, self.pers_wndw)
+        else:
+            timeseries_by_doy = doy_pad(self.timeseries, self.pers_wndw)
 
         corr = []
         doy_coo = []
@@ -618,6 +650,42 @@ def doy_pad(timeseries, wndw):
 
     timeseries_reorg = xr.DataArray(
         timeseries.temperature.values,
+        dims={
+            "month_day": len(timeseries.time.values),
+            "location": len(timeseries.location.values),
+        },
+        coords={
+            "location": ("location", timeseries.location.values),
+            "month_day": ("month_day", timeseries.month_day.values),
+            "time": ("month_day", timeseries.time.values),
+        },
+    ).sortby("month_day")
+    timeseries_reorg = timeseries_reorg.pad(month_day=pad, mode="wrap")
+    new_month_day = timeseries_reorg.month_day.values
+    new_month_day[:pad] -= 365
+    new_month_day[-pad:] += 365
+
+    return xr.DataArray(
+        timeseries_reorg.values,
+        dims={
+            "time": len(timeseries_reorg.time.values),
+            "location": len(timeseries_reorg.location.values),
+        },
+        coords={
+            "location": ("location", timeseries_reorg.location.values),
+            "month_day": ("time", new_month_day),
+            "time": ("time", timeseries_reorg.time.values),
+        },
+    )
+
+
+def doy_pad_salinity(timeseries, wndw):
+    st_y = timeseries.time.dt.year.min().values.item()
+    en_y = timeseries.time.dt.year.max().values.item()
+    pad = int(np.ceil((en_y - st_y) / 7)) * wndw // 2
+
+    timeseries_reorg = xr.DataArray(
+        timeseries.salinity.values,
         dims={
             "month_day": len(timeseries.time.values),
             "location": len(timeseries.location.values),

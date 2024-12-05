@@ -56,7 +56,7 @@ def find_station_in_bw(station_name, return_latlon=False):
 
 
 def make_persistence_forecast(
-    init_value, init_time, station_id=None, standardized_pers=True, as_dataframe=True
+        init_value, init_time, station_id=None, standardized_pers=True, as_dataframe=True, name="temperature"
 ):
     """
     assumes weekly means
@@ -65,6 +65,8 @@ def make_persistence_forecast(
     # collect model parameters for persistence model with seasonally varying persistence:
     model = collect_model(wndw=61, harm=3)
 
+    print(model)
+    
     nlag = model["persistence"].lags + 1  # +1 to return initialization value
 
     t0_xr = xr.DataArray(
@@ -105,7 +107,7 @@ def make_persistence_forecast(
 
     # add anomalies back to climatology as predicted for the desired dates above:
     abs_temp_fc = anom_fc * SC_std_pred + (SC_pred + trend_pred - model["trend"].mean)
-    abs_temp_fc.name = "temperature"
+    abs_temp_fc.name = name
 
     # correct the doy coordinate to range from 1 to 365:
     abs_temp_fc = abs_temp_fc.assign_coords(

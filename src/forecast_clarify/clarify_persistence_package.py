@@ -79,7 +79,7 @@ def make_persistence_forecast(
     )
     DOY = (
         get_doy_coord(t0_xr)
-        .assign_coords({"lags": ("time", np.arange(6))})
+        .assign_coords({"lags": ("time", np.arange(nlag))})   # 6?
         .swap_dims({"time": "lags"})
     )
 

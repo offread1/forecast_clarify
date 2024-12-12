@@ -56,16 +56,15 @@ def find_station_in_bw(station_name, return_latlon=False):
 
 
 def make_persistence_forecast(
-        init_value, init_time, station_id=None, standardized_pers=True, as_dataframe=True, name="temperature"
+        init_value, init_time, station_id=None, standardized_pers=True, as_dataframe=True, variable="temperature"
 ):
     """
     assumes weekly means
     """
 
     # collect model parameters for persistence model with seasonally varying persistence:
-    model = collect_model(wndw=61, harm=3)
-
-    print(model)
+    model = collect_model(wndw=61, harm=3, variable=variable)
+    #print(model)
     
     nlag = model["persistence"].lags + 1  # +1 to return initialization value
 
@@ -107,7 +106,7 @@ def make_persistence_forecast(
 
     # add anomalies back to climatology as predicted for the desired dates above:
     abs_temp_fc = anom_fc * SC_std_pred + (SC_pred + trend_pred - model["trend"].mean)
-    abs_temp_fc.name = name
+    abs_temp_fc.name = variable
 
     # correct the doy coordinate to range from 1 to 365:
     abs_temp_fc = abs_temp_fc.assign_coords(
@@ -125,48 +124,48 @@ def make_persistence_forecast(
 
 def collect_model(
     components=("trend", "seasonal_cycle_mean", "seasonal_cycle_std", "persistence"),
-    filename_base="temperature_insitu_3m_norkyst800_barentswatch_closest_20060101-20220920_",
     wndw=None,
     harm=None,
+    variable="temperature"
 ):
+    """
+    get_datasets assemles a list of model coefficient files, we then
+    use arguments to this routine to load the right files from the list.
+    (file names is not a robust way to pass this info, so should probably be cleaned up)
+    """
     datasets = get_datasets()
     components_coll = {}
     # trend:
     if "trend" in components:
         trnd = Trend()
-        path = [x for x in datasets if "trend.nc" in x][0]
+        path = [x for x in datasets if "trend.nc" in x and variable in x][0]
         trnd.load_trend(path)
         components_coll["trend"] = trnd
     # seasonal cycle of mean:
     if "seasonal_cycle_mean" in components:
         SC = SeasonalCycle(1, load_mode=True)
-        path = [x for x in datasets if "seasonal_cycle.nc" in x][0]
+        path = [x for x in datasets if "seasonal_cycle.nc" in x and variable in x][0]
         SC.load_sc(path)
         components_coll["seasonal_cycle_mean"] = SC
     # seasonal cycle of std:
     if "seasonal_cycle_std" in components:
         SC_std = SeasonalCycle(1, load_mode=True)
-        path = [x for x in datasets if "seasonal_cycle_std.nc" in x][0]
+        path = [x for x in datasets if "seasonal_cycle_std.nc" in x and variable in x][0]
         SC_std.load_sc(path)
         components_coll["seasonal_cycle_std"] = SC_std
     # persistence:
     if "persistence" in components:
         if wndw is None:
             pers = Persistence()
-            path = [x for x in datasets if "persistence.nc" in x][0]
+            path = [x for x in datasets if "persistence.nc" in x and variable in x][0]
             pers.load(path)
         # seasonally varying persistence parameter:
         else:
-            pers = SeasonalPersistence()
+            pers = SeasonalPersistence()          
             if wndw is None:
-                print(
-                    "Cannot load persistence seasonal cycle without `wndw` being specified!"
-                )
-            path = [
-                x
-                for x in datasets
-                if f"persistence_seasonal_cycle_{wndw}D-wndw_{harm}harm.nc" in x
-            ][0]
+                print("Cannot load persistence seasonal cycle without `wndw` being specified!")
+            path = [x for x in datasets if f"persistence_seasonal_cycle_{wndw}D-wndw_{harm}harm.nc" in x and variable in x][0]
+            print(path)
             pers.load(path)
         components_coll["persistence"] = pers
 
